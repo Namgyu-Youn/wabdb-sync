@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a bug or a usability problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the exact steps to reproduce the issue (along with code snippets if needed).
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behaviour
+    attributes:
+      label: Actual behaviour
+      description: Specify the actual behavior (along with complete outputs, detailed screenshots, etc.).
+  - type: textarea
+    id: expected-behaviour
+    attributes:
+      label: Expected behaviour
+      description: Specify the expected behavior.
+  - type: input
+    id: dstack-version
+    attributes:
+      label: dstack version
+      description: Which dstack version are you using?
+    validations:
+      required: true
+  - type: textarea
+    id: server-logs
+    attributes:
+      label: Server logs
+      description: |
+        Paste the output of `dstack server`. Use `--log-level=debug` to enable debug logs.
+      render: shell
+  - type: textarea
+    id: additional-information
+    attributes:
+      label: Additional information
+      description: |
+        Any links, references or screenshots to have more context about the issue.

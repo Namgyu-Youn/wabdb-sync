@@ -1,0 +1,4 @@
+# Private json files
+*.json
+GCP_CONFIG.json
+NOTION_CONFIG.json
