@@ -38,23 +38,10 @@ def parse_args() -> argparse.Namespace:
                        help='User name for tracking WandB runs')
     parser.add_argument('--database_id', type=str, required=True,
                        help='Notion database ID to sync with')
-    parser.add_argument('--config_path', type=str, default='config.json',
+    parser.add_argument('--config_path', type=str, default='CONFIG.json',
                        help='Path to configuration file')
     return parser.parse_args()
 
-def get_wandb_project_info() -> Tuple[str, str]:
-    """현재 실행 중인 WandB 프로젝트 정보 가져오기"""
-    current_run = wandb.run
-    if current_run is None:
-        raise ConfigError("No active WandB run found")
-
-    project_name = current_run.project
-    entity_name = current_run.entity
-
-    if not project_name or not entity_name:
-        raise ConfigError("Failed to get project or team name from WandB run")
-
-    return entity_name, project_name
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """설정 파일 로드 및 검증"""
@@ -68,10 +55,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
             raise ConfigError(f"Missing required keys in config: {missing_keys}")
 
         try:
-            team_name, project_name = get_wandb_project_info()
-            config['TEAM_NAME'] = team_name
-            config['PROJECT_NAME'] = project_name
-            logger.info(f"Using WandB project: {project_name} from team: {team_name}")
+            team_name, project_name = config['TEAM_NAME'], config['PROJECT_NAME']
         except ConfigError as e:
             raise ConfigError(f"Failed to get WandB project info: {str(e)}")
 
@@ -215,8 +199,11 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     args = parse_args()
+    config = load_config(args.config_path)
     logger.info(f"Starting sync process (Schedule: every {args.schedule_time} minutes)")
     logger.info(f"Monitoring runs for user: {args.user_name}")
+    logger.info(f"Wandb team name: {config.get('TEAM_NAME', 'N/A')}")
+    logger.info(f"Wandb project name: {config.get('PROJECT_NAME', 'N/A')}")
 
     schedule.every(args.schedule_time).minutes.do(lambda: main(args))
 
