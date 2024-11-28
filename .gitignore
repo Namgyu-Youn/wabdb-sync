@@ -1,4 +1,9 @@
 # Private json files
 *.json
+CONFIG.json
 GCP_CONFIG.json
 NOTION_CONFIG.json
+
+# Log files
+*.log
+wandb/
