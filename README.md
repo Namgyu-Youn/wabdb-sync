@@ -13,7 +13,7 @@ Following table is example.
 | Run ID | Timestamp | User | Model Type | Batch Size | Epochs | Training Loss | Validation Loss |
 |--------|-----------|------|------------|---------------|------------|---------|------------|
 | 2xk8p9n0 | 2024-11-20 14:30:15 | Namgyu-Youn | ResNet50 | 32 | 100 | 0.245 | 0.312 |
-| 7mq2r5v3 | 2024-11-20 15:45:22 | taeyoung1005 | ResNet101 | 64 | 150 | 0.198 | 0.287 |
+| 7mq2r5v3 | 2024-11-20 15:45:22 | Next Contributer | ResNet101 | 64 | 150 | 0.198 | 0.287 |
 | 9kt4h8w1 | 2024-11-20 17:20:03 | - | EfficientNet | 8 | 80 | 0.267 | 0.295 |
 | 3np6j2x5 | 2024-11-20 19:10:45 | - | VGG16 | 16 | 120 | 0.312 | 0.358 |
 
@@ -48,15 +48,17 @@ docker run -d --name wandb-sync wandb-sync
 - Following is the example of the ```FIXED_HEADERS```
 ``` bash
 {
-    "FIXED_HEADERS": [
-      "run_id",
-      "_timestamp",
-      "train_loss"
-      "model_name",
-      "batch_size",
-      "learning_rate"
-    ],
-  }
+  "TEAM_NAME": <WandB team name>,
+  "PROJECT_NAME": <WandB project name>,
+  "USER_NAME": "Namgyu-Youn",
+  "FIXED_HEADERS": [
+    "run_id",
+    "train_loss",
+    "learning_rate"
+  ],
+  "NOTION_API":<NOTION API>,
+  "GCP_JSON": "GCP_CONFIG.json" # Path of the Google sheets API file
+}
 ```
 
 <br/>
