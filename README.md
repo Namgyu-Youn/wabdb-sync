@@ -1,6 +1,7 @@
 ## wandb-sync
 Run Machine/Deep learning model using wandb, and automatically record your experimental data using API.
 
+**🎉  wandb-sync always welcome new contributer 🎉**
 
 **Features**
 - Load running data from WandB and automatically record it to Google Spreadsheet, Notion.
@@ -75,4 +76,6 @@ python wandb-gcp-sync.py --user_name <USER_NAME> --GCP_CONFIG <PATH>
 ## 📝 Note
 - You need your own API(Google spreadsheet or Notion)
 - Don't record duplicate run : If ```RUN ID``` exist, then it would be skipped.
+- Records only when WandB status is **finished or killed**
 - If you want to record your wandB data more often, paid token would be needed. (free for 30min)
+- Read more : [Notion API](https://developers.notion.com/reference/database), [Google sheets API](https://developers.google.com/sheets/api/guides/concepts?hl=ko)
