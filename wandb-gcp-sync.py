@@ -173,7 +173,7 @@ def process_runs(runs: List[Any], run_id_list: List[str],
     rows_to_add = []
 
     for run in runs:
-        if run.state == "running" and run.id not in run_id_list:
+        if (run.state == "finnished" or run.state == "killed") and run.id not in run_id_list:
             if run.user.name == user_name:
                 try:
                     row_data = [
