@@ -1,9 +1,7 @@
 import math
-import os
-from datetime import datetime
+import os, sys, time
 import schedule
 import json
-import time
 import argparse
 import logging
 from typing import Tuple, List, Dict, Any
@@ -11,6 +9,10 @@ from typing import Tuple, List, Dict, Any
 import wandb
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
+# Related function
+from scripts.logger import load_config, ConfigError, SheetError
+from scripts.dataset import get_run_value, get_timestamp, process_runs
 
 # 로깅 설정
 logging.basicConfig(
@@ -23,14 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class ConfigError(Exception):
-    """Configuration related errors"""
-    pass
-
-class SheetError(Exception):
-    """Google Sheets related errors"""
-    pass
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Sync WandB runs to Google Sheets')
     parser.add_argument('--schedule_time', type=int, default=30,
@@ -42,29 +36,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--config_path', type=str, default='CONFIG.json',
                        help='Path to configuration file')
     return parser.parse_args()
-
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    """설정 파일 로드 및 검증"""
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-
-        required_keys = ['GCP_JSON', 'FIXED_HEADERS']
-        missing_keys = [key for key in required_keys if key not in config]
-        if missing_keys:
-            raise ConfigError(f"Missing required keys in config: {missing_keys}")
-
-        try:
-            team_name, project_name = config['TEAM_NAME'], config['PROJECT_NAME']
-        except ConfigError as e:
-            raise ConfigError(f"Failed to get WandB project info: {str(e)}")
-
-        return config
-    except FileNotFoundError:
-        raise ConfigError(f"Config file not found: {config_path}")
-    except json.JSONDecodeError:
-        raise ConfigError(f"Invalid JSON in config file: {config_path}")
 
 def init_sheet(sheet_name: str, config: Dict[str, Any]) -> Tuple[gspread.Worksheet, wandb.Api]:
     """스프레드시트 초기화 및 WandB API 연결"""
@@ -144,55 +115,6 @@ def init_sheet(sheet_name: str, config: Dict[str, Any]) -> Tuple[gspread.Workshe
         logger.error(f"Unexpected error in sheet initialization: {str(e)}")
         raise SheetError(f"Failed to initialize sheet: {str(e)}")
 
-
-def get_timestamp(run: Any) -> str:
-    """타임스탬프 추출"""
-    try:
-        return (datetime.fromtimestamp(run.summary["_timestamp"])
-                .strftime("%Y-%m-%d %H:%M:%S")
-                if "_timestamp" in run.summary else "")
-    except Exception:
-        return ""
-
-
-def get_run_value(run: Any, key: str) -> str:
-    """run에서 값 추출"""
-    try:
-        if key in run.config:
-            return str(run.config[key])
-        elif key in run.summary:
-            return str(run.summary[key])
-        return ""
-    except Exception:
-        return ""
-
-
-def process_runs(runs: List[Any], run_id_list: List[str],
-                final_headers: List[str], user_name: str) -> List[List[str]]:
-    """WandB runs 처리"""
-    rows_to_add = []
-
-    for run in runs:
-        if (run.state == "finnished" or run.state == "killed") and run.id not in run_id_list:
-            if run.user.name == user_name:
-                try:
-                    row_data = [
-                        run.id,
-                        get_timestamp(run),
-                        run.user.name,
-                    ]
-                    # 추가 필드 처리
-                    for key in final_headers[3:]:
-                        value = get_run_value(run, key)
-                        row_data.append(value)
-                    rows_to_add.append(row_data)
-                except Exception as e:
-                    logger.error(f"Error processing run {run.id}: {str(e)}")
-                    continue
-
-    return rows_to_add
-
-
 def sync_data(sheet: gspread.Worksheet, new_rows: List[List[str]]) -> None:
     """Data sync"""
     try:
@@ -203,32 +125,9 @@ def sync_data(sheet: gspread.Worksheet, new_rows: List[List[str]]) -> None:
         raise SheetError(f"Failed to sync data: {str(e)}")
 
 
-def main(args: argparse.Namespace) -> None:
-    try:
-        config = load_config(args.config_path)
-        sheet, api = init_sheet(args.sheet_name, config)
-
-        runs = api.runs(f"{config['TEAM_NAME']}/{config['PROJECT_NAME']}")
-        run_id_list = [row[0] for row in sheet.get_all_values()[1:]]  # Skip header
-
-        new_rows = process_runs(
-            runs, run_id_list, config['FIXED_HEADERS'],
-            args.user_name
-        )
-
-        if new_rows:
-            sync_data(sheet, new_rows)
-            logger.info(f"Successfully added {len(new_rows)} new runs")
-        else:
-            logger.info("No new runs to add")
-
-    except Exception as e:
-        logger.error(f"Error in main sync process: {str(e)}")
-        raise
-
 if __name__ == "__main__":
     args = parse_args()
-    config = load_config(args.config_path)
+    config = load_config('gcp', args.config_path)
 
     logger.info(f"Starting sync process (Schedule: every {args.schedule_time} minutes)")
     logger.info(f"Monitoring runs for user: {args.user_name}")

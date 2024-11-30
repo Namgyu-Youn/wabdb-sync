@@ -1,195 +1,132 @@
 import math
-import os
-from datetime import datetime
+import os, sys, time
 import schedule
 import json
-import time
 import argparse
 import logging
 from typing import Tuple, List, Dict, Any
+from datetime import datetime
 
 import wandb
 from notion_client import Client
+from notion_client.errors import NotionAPIError
 
-# 로깅 설정
+# Related function
+from scripts.logger import load_config, NotionSyncError
+from scripts.dataset import get_run_value, get_timestamp
+
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('wandb_sync.log')
+        logging.FileHandler('wandb_notion_sync.log')
     ]
 )
 logger = logging.getLogger(__name__)
 
-class ConfigError(Exception):
-    """Configuration related errors"""
-    pass
-
-class NotionError(Exception):
-    """Notion related errors"""
-    pass
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Sync WandB runs to Notion')
+    parser = argparse.ArgumentParser(description='Sync WandB runs to Notion Database')
     parser.add_argument('--schedule_time', type=int, default=30,
                        help='Schedule interval in minutes (default: 30)')
-    parser.add_argument('--user_name', type=str, default='Anonymous',
+    parser.add_argument('--user_name', type=str, default='ng-youn',
                        help='User name for tracking WandB runs')
-    parser.add_argument('--database_id', type=str, required=True,
-                       help='Notion database ID to sync with')
     parser.add_argument('--config_path', type=str, default='CONFIG.json',
                        help='Path to configuration file')
     return parser.parse_args()
 
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    """설정 파일 로드 및 검증"""
+def init_notion_client(config: Dict[str, Any]) -> Tuple[Client, str]:
+    """Initialize Notion client and validate database"""
     try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
+        # Initialize Notion client
+        notion_client = Client(auth=config['NOTION_TOKEN'])
 
-        required_keys = ['NOTION_TOKEN', 'FIXED_HEADERS']
-        missing_keys = [key for key in required_keys if key not in config]
-        if missing_keys:
-            raise ConfigError(f"Missing required keys in config: {missing_keys}")
-
+        # Verify database exists
         try:
-            team_name, project_name = config['TEAM_NAME'], config['PROJECT_NAME']
-        except ConfigError as e:
-            raise ConfigError(f"Failed to get WandB project info: {str(e)}")
+            notion_client.databases.retrieve(database_id=config['NOTION_DATABASE_ID'])
+        except NotionAPIError as db_error:
+            logger.error(f"Error accessing Notion database: {db_error}")
+            raise NotionSyncError(f"Cannot access Notion database: {config['NOTION_DATABASE_ID']}")
 
-        return config
-    except FileNotFoundError:
-        raise ConfigError(f"Config file not found: {config_path}")
-    except json.JSONDecodeError:
-        raise ConfigError(f"Invalid JSON in config file: {config_path}")
-
-def init_notion(database_id: str, config: Dict[str, Any]) -> Tuple[Client, wandb.Api]:
-    """Notion 클라이언트 초기화 및 WandB API 연결"""
-    try:
-        notion = Client(auth=config['NOTION_TOKEN'])
-
-        # 데이터베이스 존재 여부 확인
-        try:
-            notion.databases.retrieve(database_id)
-        except Exception as e:
-            raise NotionError(f"Failed to access Notion database: {str(e)}")
-
-        # WandB API 연결
-        api = wandb.Api()
-
-        return notion, api
-
+        return notion_client, config['NOTION_DATABASE_ID']
     except Exception as e:
-        raise NotionError(f"Failed to initialize Notion client: {str(e)}")
+        logger.error(f"Notion client initialization error: {e}")
+        raise NotionSyncError(f"Failed to initialize Notion client: {str(e)}")
 
-def get_timestamp(run: Any) -> str:
-    """타임스탬프 추출"""
-    try:
-        return (datetime.fromtimestamp(run.summary["_timestamp"])
-                .strftime("%Y-%m-%d %H:%M:%S")
-                if "_timestamp" in run.summary else "")
-    except Exception:
-        return ""
+def convert_to_notion_properties(run: Any, config: Dict[str, Any], user_name: str) -> Dict[str, Any]:
+    """Convert run data to Notion database properties"""
+    properties = {
+        "Run ID": {"title": [{"text": {"content": run.id}}]},
+        "Timestamp": {"date": {"start": datetime.fromtimestamp(run.summary.get("_timestamp", time.time())).isoformat()}},
+        "User": {"rich_text": [{"text": {"content": user_name}}]},
+        "State": {"status": {"name": run.state}}
+    }
 
-def get_run_value(run: Any, key: str) -> str:
-    """run에서 값 추출"""
-    try:
-        if key in run.config:
-            return str(run.config[key])
-        elif key in run.summary:
-            return str(run.summary[key])
-        return ""
-    except Exception:
-        return ""
-
-def create_notion_properties(run_data: List[str], headers: List[str]) -> Dict[str, Any]:
-    """Notion 속성 생성"""
-    properties = {}
-
-    for header, value in zip(headers, run_data):
-        # Run ID는 제목으로 사용
-        if header == "Run ID":
-            properties["Name"] = {"title": [{"text": {"content": value}}]}
-        elif header == "Timestamp":
-            if value:
-                properties[header] = {"date": {"start": value}}
-        else:
-            properties[header] = {"rich_text": [{"text": {"content": value}}]}
+    # Add additional properties from config
+    for key in config.get('FIXED_HEADERS', [])[3:]:
+        value = get_run_value(run, key)
+        if value is not None:
+            # Determine Notion property type based on value type
+            if isinstance(value, (int, float)):
+                properties[key] = {"number": value}
+            elif isinstance(value, bool):
+                properties[key] = {"checkbox": value}
+            else:
+                properties[key] = {"rich_text": [{"text": {"content": str(value)}}]}
 
     return properties
 
-def process_runs(runs: List[Any], existing_run_ids: List[str],
-                final_headers: List[str], user_name: str) -> List[Dict[str, Any]]:
-    """WandB runs 처리"""
-    pages_to_create = []
-
-    for run in runs:
-        if run.state == "finished" and run.id not in existing_run_ids:
-            if run.user.name == user_name:
-                try:
-                    row_data = [
-                        run.id,
-                        get_timestamp(run),
-                        run.user.name,
-                    ]
-                    # 추가 필드 처리
-                    for key in final_headers[3:]:
-                        value = get_run_value(run, key)
-                        row_data.append(value)
-
-                    properties = create_notion_properties(row_data, final_headers)
-                    pages_to_create.append(properties)
-                except Exception as e:
-                    logger.error(f"Error processing run {run.id}: {str(e)}")
-                    continue
-
-    return pages_to_create
-
-def sync_data(notion: Client, database_id: str, pages: List[Dict[str, Any]]) -> None:
-    """Data sync to Notion"""
+def sync_to_notion(notion_client: Client, database_id: str, runs: List[Dict[str, Any]]) -> None:
+    """Sync runs to Notion database"""
     try:
-        for page_properties in pages:
-            notion.pages.create(
+        for run in runs:
+            notion_client.pages.create(
                 parent={"database_id": database_id},
-                properties=page_properties
+                properties=run
             )
-            time.sleep(0.5)  # Notion API 제한 방지
-    except Exception as e:
-        raise NotionError(f"Failed to sync data: {str(e)}")
+            time.sleep(0.5)  # Rate limiting
+        logger.info(f"Successfully added {len(runs)} new runs to Notion")
+    except NotionAPIError as e:
+        logger.error(f"Notion API error during sync: {e}")
+        raise NotionSyncError(f"Failed to sync runs to Notion: {str(e)}")
 
-def get_existing_run_ids(notion: Client, database_id: str) -> List[str]:
-    """Notion 데이터베이스에서 기존 Run ID 가져오기"""
+def fetch_existing_run_ids(notion_client: Client, database_id: str) -> List[str]:
+    """Fetch existing run IDs from Notion database"""
     try:
-        results = []
-        query = notion.databases.query(database_id=database_id)
-
-        for page in query["results"]:
-            title = page["properties"]["Name"]["title"]
-            if title:
-                results.append(title[0]["text"]["content"])
-
-        return results
+        query_response = notion_client.databases.query(
+            database_id=database_id,
+            filter={"property": "Run ID", "title": {"is_not_empty": True}}
+        )
+        return [page['properties']['Run ID']['title'][0]['text']['content']
+                for page in query_response['results']]
     except Exception as e:
-        raise NotionError(f"Failed to get existing run IDs: {str(e)}")
+        logger.error(f"Error fetching existing run IDs: {e}")
+        return []
 
 def main(args: argparse.Namespace) -> None:
     try:
-        config = load_config(args.config_path)
-        notion, api = init_notion(args.database_id, config)
+        # Load configuration
+        config = load_config('notion', args.config_path)
 
+        # Initialize Notion client
+        notion_client, database_id = init_notion_client(config)
+
+        # Initialize WandB API
+        api = wandb.Api()
+
+        # Fetch existing run IDs
+        existing_run_ids = fetch_existing_run_ids(notion_client, database_id)
+
+        # Fetch runs
         runs = api.runs(f"{config['TEAM_NAME']}/{config['PROJECT_NAME']}")
-        existing_run_ids = get_existing_run_ids(notion, args.database_id)
 
-        new_pages = process_runs(
-            runs, existing_run_ids, config['FIXED_HEADERS'],
-            args.user_name
-        )
+        # Process runs
+        new_runs = process_runs(runs, existing_run_ids, config, args.user_name)
 
-        if new_pages:
-            sync_data(notion, args.database_id, new_pages)
-            logger.info(f"Successfully added {len(new_pages)} new runs")
+        # Sync to Notion
+        if new_runs:
+            sync_to_notion(notion_client, database_id, new_runs)
         else:
             logger.info("No new runs to add")
 
@@ -199,8 +136,9 @@ def main(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     args = parse_args()
-    config = load_config(args.config_path)
-    logger.info(f"Starting sync process (Schedule: every {args.schedule_time} minutes)")
+    config = load_config('notion', args.config_path)
+
+    logger.info(f"Starting Notion sync process (Schedule: every {args.schedule_time} minutes)")
     logger.info(f"Monitoring runs for user: {args.user_name}")
     logger.info(f"Wandb team name: {config.get('TEAM_NAME', 'N/A')}")
     logger.info(f"Wandb project name: {config.get('PROJECT_NAME', 'N/A')}")
