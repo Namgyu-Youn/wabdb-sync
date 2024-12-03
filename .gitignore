@@ -6,4 +6,8 @@ NOTION_CONFIG.json
 
 # Log files
 *.log
+*.pyc
+*.o
+*.exe
 wandb/
+__pycache__/
