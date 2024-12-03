@@ -1,11 +1,13 @@
 {
   "TEAM_NAME": <WandB team name>,
   "PROJECT_NAME": <WandB project name>,
-  "GCP_JSON": "GCP_CONFIG.json",
   "USER_NAME": "Namgyu-Youn",
   "FIXED_HEADERS": [
     "run_id",
     "train_loss",
     "learning_rate"
-  ]
+  ],
+  "NOTION_API":<NOTION API>,
+  "NOTION_DB_ID":<NOTION DB ID>,
+  "GCP_API": "GCP_API.json"
 }
