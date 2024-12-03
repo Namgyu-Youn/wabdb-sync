@@ -13,7 +13,7 @@ from notion_client.errors import NotionAPIError
 
 # Related function
 from scripts.logger import load_config, NotionSyncError
-from scripts.dataset import get_run_value, get_timestamp
+from scripts.dataset import get_run_value, process_runs
 
 # Logging setup
 logging.basicConfig(
