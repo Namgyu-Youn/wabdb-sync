@@ -12,8 +12,7 @@ def load_config(tools, config_path: str) -> Dict[str, Any]:
             required_keys.append('GCP_API')
 
         elif tools == 'notion':
-            required_keys.append('NOTION_API')
-            required_keys.append('NOTION_TOKEN', 'NOTION_DB_ID', )
+            required_keys.extend(['NOTION_API', 'NOTION_TOKEN', 'NOTION_DB_ID'])
 
         missing_keys = [key for key in required_keys if key not in config]
 
