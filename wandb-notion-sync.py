@@ -1,4 +1,3 @@
-import math
 import os, sys, time
 import schedule
 import json
@@ -9,11 +8,11 @@ from datetime import datetime
 
 import wandb
 from notion_client import Client
-from notion_client.errors import NotionAPIError
+from oauth2client.service_account import ServiceAccountCredentials
 
-# Related function
-from scripts.logger import load_config, NotionSyncError
-from scripts.dataset import get_run_value, process_runs
+# Related functions
+from scripts.logger import load_config, ConfigError, NotionSyncError
+from scripts.dataset import process_runs
 
 # Logging setup
 logging.basicConfig(
@@ -36,103 +35,123 @@ def parse_args() -> argparse.Namespace:
                        help='Path to configuration file')
     return parser.parse_args()
 
-def init_notion_client(config: Dict[str, Any]) -> Tuple[Client, str]:
-    """Initialize Notion client and validate database"""
+def init_notion_client(config: Dict[str, Any]) -> Client:
+    """Initialize Notion client"""
     try:
-        # Initialize Notion client
-        notion_client = Client(auth=config['NOTION_TOKEN'])
+        notion_token = config.get('NOTION_TOKEN')
+        if not notion_token:
+            raise NotionSyncError("Notion API token is missing from configuration")
 
-        # Verify database exists
-        try:
-            notion_client.databases.retrieve(database_id=config['NOTION_DATABASE_ID'])
-        except NotionAPIError as db_error:
-            logger.error(f"Error accessing Notion database: {db_error}")
-            raise NotionSyncError(f"Cannot access Notion database: {config['NOTION_DATABASE_ID']}")
-
-        return notion_client, config['NOTION_DATABASE_ID']
+        return Client(auth=notion_token)
     except Exception as e:
-        logger.error(f"Notion client initialization error: {e}")
-        raise NotionSyncError(f"Failed to initialize Notion client: {str(e)}")
-
-def convert_to_notion_properties(run: Any, config: Dict[str, Any], user_name: str) -> Dict[str, Any]:
-    """Convert run data to Notion database properties"""
-    properties = {
-        "Run ID": {"title": [{"text": {"content": run.id}}]},
-        "Timestamp": {"date": {"start": datetime.fromtimestamp(run.summary.get("_timestamp", time.time())).isoformat()}},
-        "User": {"rich_text": [{"text": {"content": user_name}}]},
-        "State": {"status": {"name": run.state}}
-    }
-
-    # Add additional properties from config
-    for key in config.get('FIXED_HEADERS', [])[3:]:
-        value = get_run_value(run, key)
-        if value is not None:
-            # Determine Notion property type based on value type
-            if isinstance(value, (int, float)):
-                properties[key] = {"number": value}
-            elif isinstance(value, bool):
-                properties[key] = {"checkbox": value}
-            else:
-                properties[key] = {"rich_text": [{"text": {"content": str(value)}}]}
-
-    return properties
-
-def sync_to_notion(notion_client: Client, database_id: str, runs: List[Dict[str, Any]]) -> None:
-    """Sync runs to Notion database"""
-    try:
-        for run in runs:
-            notion_client.pages.create(
-                parent={"database_id": database_id},
-                properties=run
-            )
-            time.sleep(0.5)  # Rate limiting
-        logger.info(f"Successfully added {len(runs)} new runs to Notion")
-    except NotionAPIError as e:
-        logger.error(f"Notion API error during sync: {e}")
-        raise NotionSyncError(f"Failed to sync runs to Notion: {str(e)}")
+        logger.error(f"Failed to initialize Notion client: {e}")
+        raise
 
 def fetch_existing_run_ids(notion_client: Client, database_id: str) -> List[str]:
     """Fetch existing run IDs from Notion database"""
     try:
-        query_response = notion_client.databases.query(
+        existing_runs = notion_client.databases.query(
             database_id=database_id,
-            filter={"property": "Run ID", "title": {"is_not_empty": True}}
+            filter={}  # You can add more specific filters if needed
         )
-        return [page['properties']['Run ID']['title'][0]['text']['content']
-                for page in query_response['results']]
+        return [
+            run['properties']['Run ID']['rich_text'][0]['plain_text']
+            for run in existing_runs['results']
+            if run['properties'].get('Run ID') and run['properties']['Run ID'].get('rich_text')
+        ]
     except Exception as e:
-        logger.error(f"Error fetching existing run IDs: {e}")
+        logger.error(f"Error retrieving existing run IDs: {e}")
         return []
 
-def main(args: argparse.Namespace) -> None:
+def create_notion_page(notion_client: Client, database_id: str, run_data: Dict[str, Any]) -> None:
+    """Create a new page in Notion database for a run"""
     try:
+        properties = {
+            'Name': {
+                'title': [
+                    {
+                        'text': {
+                            'content': run_data.get('id', 'Unnamed Run')
+                        }
+                    }
+                ]
+            },
+            'Run ID': {
+                'rich_text': [
+                    {
+                        'text': {
+                            'content': run_data.get('id', '')
+                        }
+                    }
+                ]
+            }
+        }
+
+        # Add more properties dynamically
+        for key, value in run_data.items():
+            if key not in ['id']:
+                properties[key.capitalize()] = {
+                    'rich_text': [
+                        {
+                            'text': {
+                                'content': str(value)
+                            }
+                        }
+                    ]
+                }
+
+        notion_client.pages.create(
+            parent={'database_id': database_id},
+            properties=properties
+        )
+        logger.info(f"Created Notion page for run: {run_data.get('id', 'Unknown')}")
+    except Exception as e:
+        logger.error(f"Error creating Notion page: {e}")
+
+def main() -> None:
+    """Main synchronization function"""
+    try:
+        # Parse arguments
+        args = parse_args()
+
         # Load configuration
         config = load_config('notion', args.config_path)
 
         # Initialize Notion client
-        notion_client, database_id = init_notion_client(config)
-
-        # Initialize WandB API
-        api = wandb.Api()
+        notion_client = init_notion_client(config)
 
         # Fetch existing run IDs
-        existing_run_ids = fetch_existing_run_ids(notion_client, database_id)
+        existing_run_ids = fetch_existing_run_ids(notion_client, config['NOTION_DB_ID'])
+
+        # WandB API connection
+        wandb_api = wandb.Api()
 
         # Fetch runs
-        runs = api.runs(f"{config['TEAM_NAME']}/{config['PROJECT_NAME']}")
+        runs = wandb_api.runs(
+            path=f"{config['TEAM_NAME']}/{config['PROJECT_NAME']}",
+            filters={"state": {"$in": ["finished", "killed"]}}
+        )
+
+        # Process initial headers if needed
+        final_headers = ['Run ID', 'Timestamp', 'User Name']  # Base headers
 
         # Process runs
-        new_runs = process_runs(runs, existing_run_ids, config, args.user_name)
+        new_runs = process_runs(
+            runs,
+            existing_run_ids,
+            final_headers,
+            config.get('USER_NAME', wandb.wandb_user().name)
+        )
 
         # Sync to Notion
-        if new_runs:
-            sync_to_notion(notion_client, database_id, new_runs)
-        else:
-            logger.info("No new runs to add")
+        for run in new_runs:
+            create_notion_page(notion_client, config['NOTION_DB_ID'], run)
+
+        logger.info(f"Successfully synced {len(new_runs)} new runs")
 
     except Exception as e:
         logger.error(f"Error in main sync process: {str(e)}")
-        raise
+        time.sleep(60)  # Wait before retrying
 
 if __name__ == "__main__":
     args = parse_args()
@@ -142,8 +161,6 @@ if __name__ == "__main__":
     logger.info(f"Monitoring runs for user: {args.user_name}")
     logger.info(f"Wandb team name: {config.get('TEAM_NAME', 'N/A')}")
     logger.info(f"Wandb project name: {config.get('PROJECT_NAME', 'N/A')}")
-
-    schedule.every(args.schedule_time).minutes.do(lambda: main(args))
 
     while True:
         try:
