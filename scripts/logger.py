@@ -56,9 +56,9 @@ def get_gpu_memory():
         result = subprocess.run(['nvidia-smi', '--query-gpu=memory.total,memory.used,memory.free', '--format=csv,nounits,noheader'],
                                 capture_output=True, text=True)
         if result.returncode == 0 and result.stdout:
-            # 결과 파싱
+            # Parsing result
             memory_info = result.stdout.strip().split('\n')
-            # 각 GPU별 메모리 정보 출력
+            # Print memory usage for each GPU
             for idx, memory in enumerate(memory_info):
                 total, used, free = memory.split(',')
         return int(used)
