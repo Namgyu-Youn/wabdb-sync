@@ -40,7 +40,7 @@ def process_runs(runs: List[Any], run_id_list: List[str],
                         value = get_run_value(run, key)
                         row_data.append(value)
                     rows_to_add.append(row_data)
-                    
+
                 except Exception as e:
                     logger.error(f"Error processing run {run.id}: {str(e)}")
                     continue
