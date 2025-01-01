@@ -11,4 +11,4 @@
   "NOTION_TOKEN":<NOTION TOKEN>,
   "NOTION_DB_ID":<NOTION DB ID>,
   "GCP_API": "GCP_API.json"
-}
+} 

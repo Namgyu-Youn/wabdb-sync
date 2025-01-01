@@ -1,18 +1,12 @@
-import os, sys, time
-import schedule
+import os
 import json
-import argparse
 import logging
-from typing import Tuple, List, Dict, Any
-from datetime import datetime
+from typing import List, Dict, Any
 
 import wandb
 from notion_client import Client
-from oauth2client.service_account import ServiceAccountCredentials
 
-# Related functions
-from scripts.logger import load_config, ConfigError, NotionSyncError
-from scripts.dataset import process_runs
+from scripts.logger import load_config, NotionSyncError
 
 # Logging setup
 logging.basicConfig(
@@ -25,23 +19,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Sync WandB runs to Notion Database')
-    parser.add_argument('--schedule_time', type=int, default=30,
-                       help='Schedule interval in minutes (default: 30)')
-    parser.add_argument('--user_name', type=str, default='ng-youn',
-                       help='User name for tracking WandB runs')
-    parser.add_argument('--config_path', type=str, default='CONFIG.json',
-                       help='Path to configuration file')
-    return parser.parse_args()
-
 def init_notion_client(config: Dict[str, Any]) -> Client:
     """Initialize Notion client"""
     try:
         notion_token = config.get('NOTION_TOKEN')
         if not notion_token:
             raise NotionSyncError("Notion API token is missing from configuration")
-
         return Client(auth=notion_token)
     except Exception as e:
         logger.error(f"Failed to initialize Notion client: {e}")
@@ -52,70 +35,66 @@ def fetch_existing_run_ids(notion_client: Client, database_id: str) -> List[str]
     try:
         existing_runs = notion_client.databases.query(
             database_id=database_id,
-            filter={}  # You can add more specific filters if needed
+            filter={}
         )
         return [
             run['properties']['Run ID']['rich_text'][0]['plain_text']
             for run in existing_runs['results']
-            if run['properties'].get('Run ID') and run['properties']['Run ID'].get('rich_text')
+            if run['properties'].get('Run ID', {}).get('rich_text')
         ]
     except Exception as e:
         logger.error(f"Error retrieving existing run IDs: {e}")
         return []
+
+def get_run_data(run: Any) -> Dict[str, Any]:
+    """Extract all available data from a WandB run"""
+    run_data = {
+        'id': run.id,
+        'state': run.state,
+        'user': run.user.name,
+        'created_at': run.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    # Add all config parameters
+    for key, value in run.config.items():
+        run_data[f"config_{key}"] = str(value)
+
+    # Add all summary metrics
+    for key, value in run.summary.items():
+        if not key.startswith('_'):  # Skip internal WandB keys
+            run_data[f"metric_{key}"] = str(value)
+
+    return run_data
 
 def create_notion_page(notion_client: Client, database_id: str, run_data: Dict[str, Any]) -> None:
     """Create a new page in Notion database for a run"""
     try:
         properties = {
             'Name': {
-                'title': [
-                    {
-                        'text': {
-                            'content': run_data.get('id', 'Unnamed Run')
-                        }
-                    }
-                ]
-            },
-            'Run ID': {
-                'rich_text': [
-                    {
-                        'text': {
-                            'content': run_data.get('id', '')
-                        }
-                    }
-                ]
+                'title': [{'text': {'content': run_data['id']}}]
             }
         }
 
-        # Add more properties dynamically
+        # Add all run data as properties
         for key, value in run_data.items():
-            if key not in ['id']:
-                properties[key.capitalize()] = {
-                    'rich_text': [
-                        {
-                            'text': {
-                                'content': str(value)
-                            }
-                        }
-                    ]
+            if key != 'id':  # Skip ID as it's already used in Name
+                properties[key.replace('_', ' ').title()] = {
+                    'rich_text': [{'text': {'content': str(value)}}]
                 }
 
         notion_client.pages.create(
             parent={'database_id': database_id},
             properties=properties
         )
-        logger.info(f"Created Notion page for run: {run_data.get('id', 'Unknown')}")
+        logger.info(f"Created Notion page for run: {run_data['id']}")
     except Exception as e:
         logger.error(f"Error creating Notion page: {e}")
 
 def main() -> None:
     """Main synchronization function"""
     try:
-        # Parse arguments
-        args = parse_args()
-
         # Load configuration
-        config = load_config('notion', args.config_path)
+        config = load_config('notion', 'CONFIG.json')
 
         # Initialize Notion client
         notion_client = init_notion_client(config)
@@ -123,7 +102,7 @@ def main() -> None:
         # Fetch existing run IDs
         existing_run_ids = fetch_existing_run_ids(notion_client, config['NOTION_DB_ID'])
 
-        # WandB API connection
+        # Initialize WandB API
         wandb_api = wandb.Api()
 
         # Fetch runs
@@ -132,43 +111,16 @@ def main() -> None:
             filters={"state": {"$in": ["finished", "killed"]}}
         )
 
-        # Process initial headers if needed
-        final_headers = ['Run ID', 'Timestamp', 'User Name']  # Base headers
+        # Process each run
+        for run in runs:
+            if run.id not in existing_run_ids:
+                run_data = get_run_data(run)
+                create_notion_page(notion_client, config['NOTION_DB_ID'], run_data)
 
-        # Process runs
-        new_runs = process_runs(
-            runs,
-            existing_run_ids,
-            final_headers,
-            config.get('USER_NAME', wandb.wandb_user().name)
-        )
-
-        # Sync to Notion
-        for run in new_runs:
-            create_notion_page(notion_client, config['NOTION_DB_ID'], run)
-
-        logger.info(f"Successfully synced {len(new_runs)} new runs")
+        logger.info("Sync completed successfully")
 
     except Exception as e:
-        logger.error(f"Error in main sync process: {str(e)}")
-        time.sleep(60)  # Wait before retrying
+        logger.error(f"Error in sync process: {str(e)}")
 
 if __name__ == "__main__":
-    args = parse_args()
-    config = load_config('notion', args.config_path)
-
-    logger.info(f"Starting Notion sync process (Schedule: every {args.schedule_time} minutes)")
-    logger.info(f"Monitoring runs for user: {args.user_name}")
-    logger.info(f"Wandb team name: {config.get('TEAM_NAME', 'N/A')}")
-    logger.info(f"Wandb project name: {config.get('PROJECT_NAME', 'N/A')}")
-
-    while True:
-        try:
-            schedule.run_pending()
-            time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Sync process stopped by user")
-            break
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            time.sleep(60)  # Retry 1 min later if error occurs
+    main()

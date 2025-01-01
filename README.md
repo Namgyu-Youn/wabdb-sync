@@ -1,11 +1,13 @@
 ## wandb-sync
-- **🎉  wandb-sync always welcome new contributer 🎉**
-- Run Machine/Deep learning model using wandb, and automatically record experimental data using API.
+- WandB is useful.. But for collaboration, Notion is better! 😃
+- So, I made auto-sync recorder (WandB -> Notion).
+
+## Installation
+- Run Machine/Deep Learning model using wandb, and automatically record experimental data using API.
 - It is useful for tracking and managing your experiments.
 
 **Features**
-- Load running data from WandB and automatically record it to Google Spreadsheet, Notion.
-- Use ```FIXED_HEADERS``` for your customization.
+- Load running data from WandB and automatically record it to Notion, Google Spreadsheet.
 - Handle NaN value and special character (ex. ◈, @ )
 
 
@@ -14,7 +16,7 @@ Following table is example.
 | Run ID | Timestamp | User | Model Type | Batch Size | Epochs | Training Loss | Validation Loss |
 |--------|-----------|------|------------|---------------|------------|---------|------------|
 | 2xk8p9n0 | 2024-11-20 14:30:15 | Namgyu-Youn | ResNet50 | 32 | 100 | 0.245 | 0.312 |
-| 7mq2r5v3 | 2024-11-20 15:45:22 | New Contributer | ResNet101 | 64 | 150 | 0.198 | 0.287 |
+| 7mq2r5v3 | 2024-11-20 15:45:22 | - | ResNet101 | 64 | 150 | 0.198 | 0.287 |
 | 9kt4h8w1 | 2024-11-20 17:20:03 | - | EfficientNet | 8 | 80 | 0.267 | 0.295 |
 | 3np6j2x5 | 2024-11-20 19:10:45 | - | VGG16 | 16 | 120 | 0.312 | 0.358 |
 
@@ -58,7 +60,9 @@ docker run -d --name wandb-sync wandb-sync
     "learning_rate"
   ],
   "NOTION_API":<NOTION API>,
-  "GCP_JSON": "GCP_CONFIG.json" # Path of the Google sheets API file
+  "NOTION_TOKEN":<NOTION TOKEN>,
+  "NOTION_DB_ID":<NOTION DB ID>,
+  "GCP_API": "GCP_API.json"
 }
 ```
 
@@ -66,7 +70,7 @@ docker run -d --name wandb-sync wandb-sync
 
 ### Step 4. Run the script file
 ```bash
-python wandb-notion-sync.py --user_name <USER_NAME> --NOTION_CONFIG <PATH>
+python main.py --user_name <USER_NAME> --NOTION_CONFIG <PATH>
 ```
 or
 ```bash
