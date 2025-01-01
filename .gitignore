@@ -11,3 +11,7 @@ NOTION_CONFIG.json
 *.exe
 wandb/
 __pycache__/
+
+# Environment
+env
+.env
