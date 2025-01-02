@@ -1,4 +1,6 @@
 import os, sys
+import pytest
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
 sys.path.insert(0, root_dir)
