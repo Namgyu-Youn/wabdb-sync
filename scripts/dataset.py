@@ -1,5 +1,6 @@
 import scripts.logger as logger
 from datetime import datetime
+from typing import Any, List
 
 def get_timestamp(run: Any) -> str:
     """타임스탬프 추출"""
