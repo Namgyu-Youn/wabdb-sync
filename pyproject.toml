@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Sync W&B runs with Notion"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
-packages = [{include = "wandb_sync"}]
+packages = [{include = "scripts"}, {include = "main.py"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
