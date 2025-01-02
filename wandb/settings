@@ -1,0 +1,5 @@
+[default]
+entity = brain_tumor_segmentation
+project = namgyu-youn
+base_url = https://api.wandb.ai
+

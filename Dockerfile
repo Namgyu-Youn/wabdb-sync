@@ -1,28 +1,32 @@
-FROM python:3.8-slim
+FROM python:3.12-slim
+
+# Set environment variables
+ENV PYTHONFAULTHANDLER=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    POETRY_VERSION=1.7.1 \
+    POETRY_HOME="/opt/poetry" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="$POETRY_HOME/bin:$PATH"
 
-# Set working directory
-WORKDIR /app
-
-# Copy poetry files
-COPY pyproject.toml poetry.lock ./
-
-# Copy source code
-COPY . .
+# Copy project files
+COPY poetry.lock pyproject.toml ./
+COPY wandb_sync ./wandb_sync
 
 # Install dependencies
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-dev --no-interaction --no-ansi
+RUN poetry install --no-root --no-dev
 
-# Set environment variables
-ENV PYTHONPATH=/app
-
-# Run the script
-CMD ["python", "wandb-notion-sync.py"]
+# Run the application
+CMD ["poetry", "run", "python", "-m", "wandb_sync.main"]

@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  wandb-sync:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - NOTION_TOKEN=${NOTION_TOKEN}
+      - NOTION_DB_ID=${NOTION_DB_ID}
+    command: poetry run python -m wandb_sync.main

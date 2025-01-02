@@ -1,17 +1,36 @@
-# Private json files
-*.json
-CONFIG.json
-GCP_CONFIG.json
-NOTION_CONFIG.json
-
-# Log files
-*.log
-*.pyc
-*.o
-*.exe
-wandb/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+dist/
+build/
+*.egg-info/
+
+# Poetry
+poetry.lock
 
 # Environment
-env
 .env
+.venv
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
