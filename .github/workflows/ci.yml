@@ -1,63 +1,62 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+ push:
+   branches: [ main ]
+ pull_request:
+   branches: [ main ]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+ test:
+   runs-on: ubuntu-latest
+   steps:
+     - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+     - name: Set up Python
+       uses: actions/setup-python@v5
+       with:
+         python-version: '3.12'
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: 1.7.1
+     - name: Install Poetry
+       uses: snok/install-poetry@v1
+       with:
+         version: 1.7.1
 
-      - name: Install dependencies
-        run: poetry install
+     - name: Install dependencies
+       run: |
+         poetry install
 
-      - name: Run tests and linting
-      env:
-        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-        NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
-        WANDB_TEAM: ${{ secrets.WANDB_TEAM }}
-        WANDB_PROJECT: ${{ secrets.WANDB_PROJECT }}
-      run: |
-        poetry run pytest
-        poetry run ruff check .
-        poetry run mypy .
-        run: |
-          poetry run pytest
-          poetry run ruff check .
-          poetry run mypy .
+     - name: Run tests and linting
+       run: |
+         poetry run pytest -v
+         poetry run ruff check .
+         poetry run mypy .
 
-  docker:
-    needs: test
-    if: github.ref == 'refs/heads/main'  # main 브랜치에만 실행
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+ docker:
+   needs: test
+   if: github.ref == 'refs/heads/main'
+   runs-on: ubuntu-latest
+   env:
+     DOCKER_IMAGE: wandb-sync
+     DOCKER_TAG: latest
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+   steps:
+     - uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+     - name: Set up Docker Buildx
+       uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/wandb-sync:latest
+     - name: Login to GitHub Container Registry
+       uses: docker/login-action@v3
+       with:
+         registry: ghcr.io
+         username: ${{ github.repository_owner }}
+         password: ${{ secrets.GITHUB_TOKEN }}
+
+     - name: Build and push
+       uses: docker/build-push-action@v5
+       with:
+         push: true
+         tags: ghcr.io/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
+         cache-from: type=gha
+         cache-to: type=gha,mode=max
