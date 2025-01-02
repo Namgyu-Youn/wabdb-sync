@@ -1,10 +1,7 @@
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
-import pytest
+import os, sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+sys.path.insert(0, root_dir)
 
 from main import NotionSync, RunData
 
