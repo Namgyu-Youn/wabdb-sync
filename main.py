@@ -1,7 +1,5 @@
-import os
-import json
 import logging
-from typing import List, Dict, Optional
+from typing import Dict
 from datetime import datetime
 from dataclasses import dataclass
 
