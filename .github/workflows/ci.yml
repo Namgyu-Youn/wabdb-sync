@@ -26,6 +26,15 @@ jobs:
         run: poetry install
 
       - name: Run tests and linting
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+        WANDB_TEAM: ${{ secrets.WANDB_TEAM }}
+        WANDB_PROJECT: ${{ secrets.WANDB_PROJECT }}
+      run: |
+        poetry run pytest
+        poetry run ruff check .
+        poetry run mypy .
         run: |
           poetry run pytest
           poetry run ruff check .
