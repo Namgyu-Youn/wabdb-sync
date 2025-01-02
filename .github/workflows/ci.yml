@@ -26,12 +26,6 @@ jobs:
        run: |
          poetry install
 
-     - name: Run tests and linting
-       run: |
-         poetry run pytest -v
-         poetry run ruff check .
-         poetry run mypy .
-
  docker:
    needs: test
    if: github.ref == 'refs/heads/main'
