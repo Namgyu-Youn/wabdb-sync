@@ -63,7 +63,17 @@ def test_create_notion_page(mock_notion, mock_wandb, mock_config):
        mock_notion.pages.create.assert_called_once()
 
 def test_sync_runs_process(mock_notion, mock_wandb, mock_config):
-   with patch.object(NotionSync, '_init_notion_client', return_value=mock_notion):
-       sync = NotionSync(mock_config)
-       sync.sync_runs()
-       mock_notion.pages.create.assert_called_once()
+    with patch.object(NotionSync, '_init_notion_client', return_value=mock_notion):
+        # Set up wandb mock
+        mock_run = Mock()
+        mock_run.id = "new-run"
+        mock_run.state = "finished"
+        mock_run.user.name = "test-user"
+        mock_run.created_at = datetime.now()
+        mock_run.config = {"param": "value"}
+        mock_run.summary = {"metric": "0.9"}
+        mock_wandb.return_value.runs.return_value = [mock_run]
+
+        sync = NotionSync(mock_config)
+        sync.sync_runs()
+        mock_notion.pages.create.assert_called_once()
